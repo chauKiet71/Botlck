@@ -1,0 +1,52 @@
+{
+  "name": "personal-assistant-memory",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Structured long-term memory and document retrieval for OpenClaw on Neon PostgreSQL.",
+  "type": "module",
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "workspace",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "prebuild": "npm run clean",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "plugin:build": "npm run build && openclaw plugins build --root . --entry ./dist/index.js",
+    "plugin:check": "npm run build && openclaw plugins build --root . --entry ./dist/index.js --check",
+    "plugin:validate": "npm run build && openclaw plugins validate --root . --entry ./dist/index.js",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "pg": "^8.16.3",
+    "typebox": "1.3.25"
+  },
+  "peerDependencies": {
+    "openclaw": "2026.6.9"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "@types/pg": "^8.15.5",
+    "openclaw": "2026.6.9",
+    "typescript": "^5.9.2"
+  },
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "compat": {
+      "pluginApi": ">=2026.6.9",
+      "minGatewayVersion": "2026.6.9"
+    },
+    "build": {
+      "openclawVersion": "2026.6.9",
+      "pluginSdkVersion": "2026.6.9"
+    }
+  }
+}

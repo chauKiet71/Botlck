@@ -1,0 +1,34 @@
+{
+  agents: {
+    defaults: {
+      workspace: "~/.openclaw/workspace",
+      sandbox: {
+        mode: "all",
+        backend: "docker",
+        scope: "agent",
+        workspaceAccess: "none",
+      },
+    },
+  },
+  plugins: {
+    entries: {
+      "personal-assistant-memory": {
+        enabled: true,
+        config: {
+          // The connection string itself stays in the process environment.
+          databaseUrlEnv: "DATABASE_URL",
+          // Tables are created and upgraded automatically in this schema.
+          databaseSchema: "openclaw_assistant",
+          maxPoolSize: 4,
+          connectionTimeoutMs: 10000,
+          // Use "agent" only for a single-owner personal assistant.
+          // For a shared gateway use "channel-requester" or separate gateways.
+          ownerMode: "agent",
+          maxRecallResults: 8,
+          documentChunkChars: 1600,
+          documentChunkOverlapChars: 200,
+        },
+      },
+    },
+  },
+}

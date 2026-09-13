@@ -1,0 +1,93 @@
+{
+  "id": "personal-assistant-memory",
+  "name": "Personal Assistant Memory",
+  "description": "Structured long-term memory and local document retrieval for OpenClaw.",
+  "categories": [
+    "other"
+  ],
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "databaseUrlEnv": {
+        "type": "string",
+        "default": "DATABASE_URL",
+        "description": "Environment variable containing the Neon PostgreSQL connection string."
+      },
+      "databaseSchema": {
+        "type": "string",
+        "default": "openclaw_assistant",
+        "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+        "description": "PostgreSQL schema automatically managed by this plugin."
+      },
+      "ownerMode": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "agent"
+          },
+          {
+            "type": "string",
+            "const": "requester"
+          },
+          {
+            "type": "string",
+            "const": "channel-requester"
+          },
+          {
+            "type": "string",
+            "const": "session"
+          }
+        ],
+        "default": "agent",
+        "description": "Use agent for one personal owner; use channel-requester for a shared gateway."
+      },
+      "maxPoolSize": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20,
+        "default": 4
+      },
+      "connectionTimeoutMs": {
+        "type": "integer",
+        "minimum": 1000,
+        "maximum": 60000,
+        "default": 10000
+      },
+      "maxRecallResults": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 30,
+        "default": 8
+      },
+      "documentChunkChars": {
+        "type": "integer",
+        "minimum": 500,
+        "maximum": 6000,
+        "default": 1600
+      },
+      "documentChunkOverlapChars": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 1000,
+        "default": 200
+      }
+    },
+    "additionalProperties": false
+  },
+  "version": "0.1.0",
+  "contracts": {
+    "tools": [
+      "assistant_remember",
+      "assistant_recall",
+      "assistant_list_memories",
+      "assistant_forget",
+      "assistant_index_document",
+      "assistant_search_documents",
+      "assistant_list_documents",
+      "assistant_remove_document"
+    ]
+  }
+}
