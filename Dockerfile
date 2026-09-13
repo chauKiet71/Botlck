@@ -34,7 +34,7 @@ ENV NODE_ENV=production \
     OPENCLAW_DISABLE_BONJOUR=1
 
 RUN mkdir -p /data/.openclaw /data/workspace \
-    && chown -R node:node /app /data
+    && chown -R node:node /data
 
 USER node
 
