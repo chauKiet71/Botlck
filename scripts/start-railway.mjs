@@ -102,6 +102,13 @@ if (!pluginAvailable) {
   runOpenClaw(["plugins", "install", "-l", appDir]);
 }
 runOpenClaw(["plugins", "enable", pluginId]);
+runOpenClaw([
+  "config",
+  "set",
+  "plugins.allow",
+  JSON.stringify(["codex", pluginId]),
+  "--strict-json",
+]);
 
 if (process.env.TELEGRAM_BOT_TOKEN?.trim()) {
   runOpenClaw(["channels", "add", "--channel", "telegram", "--use-env"]);
