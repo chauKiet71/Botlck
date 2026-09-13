@@ -106,7 +106,18 @@ runOpenClaw([
   "config",
   "set",
   "plugins.allow",
-  JSON.stringify(["codex", pluginId]),
+  JSON.stringify([
+    "browser",
+    "canvas",
+    "codex",
+    "device-pair",
+    "file-transfer",
+    "memory-core",
+    pluginId,
+    "phone-control",
+    "talk-voice",
+    "telegram",
+  ]),
   "--strict-json",
 ]);
 
