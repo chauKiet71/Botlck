@@ -39,7 +39,6 @@ RUN mkdir -p /data/.openclaw /data/workspace \
 USER node
 
 EXPOSE 8080
-VOLUME ["/data"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD node -e "const p=process.env.OPENCLAW_GATEWAY_PORT||process.env.PORT||'8080';fetch('http://127.0.0.1:'+p+'/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
