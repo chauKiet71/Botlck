@@ -1,0 +1,13 @@
+.git
+.gitignore
+.codegraph
+.env
+.env.*
+.openclaw
+node_modules
+dist
+coverage
+*.log
+*.tgz
+Dockerfile*
+!Dockerfile

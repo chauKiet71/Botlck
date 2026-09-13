@@ -21,6 +21,7 @@
     "plugin:build": "npm run build && openclaw plugins build --root . --entry ./dist/index.js",
     "plugin:check": "npm run build && openclaw plugins build --root . --entry ./dist/index.js --check",
     "plugin:validate": "npm run build && openclaw plugins validate --root . --entry ./dist/index.js",
+    "start:railway": "node scripts/start-railway.mjs",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {

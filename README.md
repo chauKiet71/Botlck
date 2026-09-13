@@ -77,6 +77,39 @@ Copy-Item .\workspace\MEMORY.md "$env:USERPROFILE\.openclaw\workspace\MEMORY.md"
 
 Merge the relevant parts of `examples/openclaw.json5` into your OpenClaw config, then restart the Gateway.
 
+## Deploy to Railway
+
+The repository includes a production `Dockerfile`, an idempotent startup script, and `railway.json`.
+The first container start on an empty volume onboards OpenClaw, copies missing workspace files, links and enables this plugin, and configures Telegram when its token is present. Existing state and workspace files are preserved.
+
+In Railway:
+
+1. Deploy this GitHub repository as one service with one replica.
+2. Attach a persistent volume at `/data`.
+3. Enable Public Networking with target port `8080`.
+4. Configure these service variables (seal all secret values):
+
+```dotenv
+OPENCLAW_GATEWAY_PORT=8080
+OPENCLAW_STATE_DIR=/data/.openclaw
+OPENCLAW_WORKSPACE_DIR=/data/workspace
+OPENCLAW_GATEWAY_TOKEN=<random-admin-secret>
+OPENAI_API_KEY=<openai-api-key>
+DATABASE_URL=<neon-pooled-connection-string>
+TELEGRAM_BOT_TOKEN=<telegram-bot-token>
+RAILWAY_RUN_UID=0
+```
+
+`TELEGRAM_BOT_TOKEN` is optional for Gateway startup; omit it only when Telegram should remain disabled. `RAILWAY_RUN_UID=0` lets the process initialize a newly attached Railway volume, whose mount is owned by root.
+
+The health check is `/startupz`. After deployment, open `https://<railway-domain>/openclaw`, enter `OPENCLAW_GATEWAY_TOKEN`, then run these read-only checks in the Railway shell:
+
+```bash
+openclaw doctor --json
+openclaw plugins inspect personal-assistant-memory --runtime
+openclaw channels status
+```
+
 On the first database operation, the plugin automatically:
 
 1. Connects using the environment variable configured by `databaseUrlEnv`.
