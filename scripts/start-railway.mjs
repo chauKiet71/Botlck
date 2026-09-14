@@ -36,7 +36,9 @@ if (!hasOpenRouterKey && !hasOpenAiKey) {
 
 const primaryModel =
   process.env.OPENCLAW_PRIMARY_MODEL?.trim() ||
-  (hasOpenRouterKey ? "openrouter/openrouter/free" : "openai/gpt-5.5");
+  (hasOpenRouterKey
+    ? "openrouter/deepseek/deepseek-v4-flash-0731"
+    : "openai/gpt-5.5");
 
 mkdirSync(stateDir, { recursive: true });
 mkdirSync(workspaceDir, { recursive: true });
