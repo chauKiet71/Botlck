@@ -2,6 +2,11 @@ import { Type } from "typebox";
 import { defineToolPlugin } from "openclaw/plugin-sdk/tool-plugin";
 
 import { requireDatabaseUrl, resolvePluginConfig, type PluginConfig } from "./src/config.js";
+import {
+  persistInboundFile,
+  removeStoredFile,
+  resolveStoredFilePath,
+} from "./src/file-storage.js";
 import { resolveOwnerKey } from "./src/owner.js";
 import { AssistantStore } from "./src/store.js";
 import {
@@ -9,6 +14,7 @@ import {
   type DocumentInput,
   type MemoryInput,
   type MemoryKind,
+  type StoredFileInput,
 } from "./src/types.js";
 
 const MemoryKindSchema = Type.Union(MEMORY_KINDS.map((kind) => Type.Literal(kind)));
@@ -43,6 +49,14 @@ const ConfigSchema = Type.Object(
     maxRecallResults: Type.Optional(Type.Integer({ minimum: 1, maximum: 30, default: 8 })),
     documentChunkChars: Type.Optional(Type.Integer({ minimum: 500, maximum: 6000, default: 1600 })),
     documentChunkOverlapChars: Type.Optional(Type.Integer({ minimum: 0, maximum: 1000, default: 200 })),
+    maxStoredFileMb: Type.Optional(
+      Type.Integer({
+        minimum: 1,
+        maximum: 25,
+        default: 20,
+        description: "Maximum size of one remembered file copied to the persistent workspace.",
+      }),
+    ),
   },
   { additionalProperties: false },
 );
@@ -119,6 +133,55 @@ const ListDocumentParameters = Type.Object(
 const RemoveDocumentParameters = Type.Object(
   {
     documentId: Type.String({ minLength: 1, maxLength: 80 }),
+    confirmed: Type.Literal(true, { description: "Must be true only after explicit user confirmation." }),
+  },
+  { additionalProperties: false },
+);
+
+const RememberFileParameters = Type.Object(
+  {
+    label: Type.String({
+      minLength: 1,
+      maxLength: 300,
+      description: "Human description used to find the file later, for example: CV của tôi.",
+    }),
+    fileRef: Type.String({
+      minLength: 1,
+      maxLength: 2000,
+      description:
+        "The media://inbound/... or media/inbound/... reference shown for the attachment in the current message. Do not read or extract the file.",
+    }),
+    originalName: Type.Optional(Type.String({ minLength: 1, maxLength: 255 })),
+    mimeType: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
+    tags: OptionalTags,
+    replaceExisting: Type.Optional(
+      Type.Boolean({ description: "Replace the active file with the same label after the user requests it." }),
+    ),
+  },
+  { additionalProperties: false },
+);
+
+const FindFileParameters = Type.Object(
+  {
+    query: Type.String({ minLength: 1, maxLength: 500 }),
+    limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 30 })),
+  },
+  { additionalProperties: false },
+);
+
+const GetFileParameters = Type.Object(
+  { fileId: Type.String({ minLength: 1, maxLength: 80 }) },
+  { additionalProperties: false },
+);
+
+const ListFileParameters = Type.Object(
+  { limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })) },
+  { additionalProperties: false },
+);
+
+const ForgetFileParameters = Type.Object(
+  {
+    fileId: Type.String({ minLength: 1, maxLength: 80 }),
     confirmed: Type.Literal(true, { description: "Must be true only after explicit user confirmation." }),
   },
   { additionalProperties: false },
@@ -370,6 +433,199 @@ export default defineToolPlugin({
               removed,
               documentId: input.documentId,
             });
+          },
+        };
+      },
+    }),
+    tool({
+      name: "assistant_remember_file",
+      label: "Ghi nhớ tệp theo nhãn",
+      description:
+        "Remember an attachment without reading or extracting its contents. Use when the user sends a file with a label such as 'đây là CV của tôi'. Pass the current attachment's media reference exactly as fileRef.",
+      parameters: RememberFileParameters,
+      factory({ config: rawConfig, toolContext }) {
+        const config = resolvePluginConfig(rawConfig);
+        const store = storeFor(config);
+        return {
+          name: "assistant_remember_file",
+          label: "Ghi nhớ tệp theo nhãn",
+          description:
+            "Remember an attachment without reading or extracting its contents. Use when the user sends a file with a label such as 'đây là CV của tôi'. Pass the current attachment's media reference exactly as fileRef.",
+          parameters: RememberFileParameters,
+          executionMode: "sequential",
+          async execute(_id, params) {
+            const input = params as {
+              label: string;
+              fileRef: string;
+              originalName?: string;
+              mimeType?: string;
+              tags?: string[];
+              replaceExisting?: boolean;
+            };
+            const workspaceDir = toolContext.workspaceDir;
+            if (!workspaceDir) throw new Error("The active OpenClaw workspace directory is unavailable.");
+            const ownerKey = resolveOwnerKey(toolContext, config.ownerMode);
+            const existing = await store.findActiveFileByLabel(ownerKey, input.label);
+            if (existing && !input.replaceExisting) {
+              throw new Error(
+                `Đã có tệp mang nhãn “${input.label.trim()}” (ID: ${existing.id}). Hãy hỏi người dùng trước khi thay thế, rồi gọi lại với replaceExisting=true.`,
+              );
+            }
+
+            const persisted = await persistInboundFile({
+              workspaceDir,
+              ...(process.env.OPENCLAW_STATE_DIR?.trim()
+                ? { stateDir: process.env.OPENCLAW_STATE_DIR.trim() }
+                : {}),
+              ownerKey,
+              fileRef: input.fileRef,
+              ...(input.originalName ? { originalName: input.originalName } : {}),
+              ...(input.mimeType ? { mimeType: input.mimeType } : {}),
+              maxBytes: config.maxStoredFileMb * 1024 * 1024,
+            });
+            try {
+              const stored = await store.rememberFile(ownerKey, {
+                label: input.label,
+                originalName: persisted.originalName,
+                storageRef: persisted.storageRef,
+                ...(persisted.mimeType ? { mimeType: persisted.mimeType } : {}),
+                fileSize: persisted.fileSize,
+                ...(input.tags ? { tags: input.tags } : {}),
+                ...(toolContext.messageChannel ? { sourceChannel: toolContext.messageChannel } : {}),
+                ...(input.replaceExisting !== undefined ? { replaceExisting: input.replaceExisting } : {}),
+              } satisfies StoredFileInput);
+              if (stored.replacedStorageRef) {
+                await removeStoredFile(workspaceDir, stored.replacedStorageRef).catch(() => false);
+              }
+              return success(
+                `Đã ghi nhớ tệp “${stored.file.label}” mà không đọc nội dung.`,
+                { file: stored.file, replaced: Boolean(stored.replacedStorageRef) },
+              );
+            } catch (error) {
+              await removeStoredFile(workspaceDir, persisted.storageRef).catch(() => false);
+              throw error;
+            }
+          },
+        };
+      },
+    }),
+    tool({
+      name: "assistant_find_files",
+      label: "Tìm tệp đã ghi nhớ",
+      description:
+        "Search remembered file metadata by label, original filename, or tags. This does not read file contents. Use before answering a request for a previously stored file.",
+      parameters: FindFileParameters,
+      factory({ config: rawConfig, toolContext }) {
+        const config = resolvePluginConfig(rawConfig);
+        const store = storeFor(config);
+        return {
+          name: "assistant_find_files",
+          label: "Tìm tệp đã ghi nhớ",
+          description:
+            "Search remembered file metadata by label, original filename, or tags. This does not read file contents. Use before answering a request for a previously stored file.",
+          parameters: FindFileParameters,
+          executionMode: "parallel",
+          async execute(_id, params) {
+            const input = params as { query: string; limit?: number };
+            const ownerKey = resolveOwnerKey(toolContext, config.ownerMode);
+            const files = await store.searchStoredFiles(ownerKey, input.query, input.limit ?? 10);
+            return success(
+              files.length ? `Tìm thấy ${files.length} tệp phù hợp.` : "Không tìm thấy tệp đã ghi nhớ phù hợp.",
+              { files },
+            );
+          },
+        };
+      },
+    }),
+    tool({
+      name: "assistant_get_file",
+      label: "Lấy tệp để gửi lại",
+      description:
+        "Get the delivery path for one remembered file by ID without reading it. After this succeeds, send deliveryPath to the user with the message tool's media/path field; do not merely print the path.",
+      parameters: GetFileParameters,
+      factory({ config: rawConfig, toolContext }) {
+        const config = resolvePluginConfig(rawConfig);
+        const store = storeFor(config);
+        return {
+          name: "assistant_get_file",
+          label: "Lấy tệp để gửi lại",
+          description:
+            "Get the delivery path for one remembered file by ID without reading it. After this succeeds, send deliveryPath to the user with the message tool's media/path field; do not merely print the path.",
+          parameters: GetFileParameters,
+          executionMode: "parallel",
+          async execute(_id, params) {
+            const input = params as { fileId: string };
+            const workspaceDir = toolContext.workspaceDir;
+            if (!workspaceDir) throw new Error("The active OpenClaw workspace directory is unavailable.");
+            const ownerKey = resolveOwnerKey(toolContext, config.ownerMode);
+            const file = await store.getStoredFile(ownerKey, input.fileId);
+            if (!file) return success("Không tìm thấy tệp đang hoạt động với ID này.", { file: null });
+            const deliveryPath = resolveStoredFilePath(workspaceDir, file.storageRef);
+            return success(
+              `Đã lấy tệp “${file.label}”. Hãy gửi tệp bằng message tool với media/path là: ${deliveryPath}`,
+              { file, deliveryPath },
+            );
+          },
+        };
+      },
+    }),
+    tool({
+      name: "assistant_list_files",
+      label: "Liệt kê tệp đã ghi nhớ",
+      description: "List active remembered files and their IDs without reading file contents.",
+      parameters: ListFileParameters,
+      factory({ config: rawConfig, toolContext }) {
+        const config = resolvePluginConfig(rawConfig);
+        const store = storeFor(config);
+        return {
+          name: "assistant_list_files",
+          label: "Liệt kê tệp đã ghi nhớ",
+          description: "List active remembered files and their IDs without reading file contents.",
+          parameters: ListFileParameters,
+          executionMode: "parallel",
+          async execute(_id, params) {
+            const input = params as { limit?: number };
+            const ownerKey = resolveOwnerKey(toolContext, config.ownerMode);
+            const files = await store.listStoredFiles(ownerKey, input.limit ?? 20);
+            return success(`Có ${files.length} tệp đang được ghi nhớ.`, { files });
+          },
+        };
+      },
+    }),
+    tool({
+      name: "assistant_forget_file",
+      label: "Xóa tệp đã ghi nhớ",
+      description:
+        "Delete one remembered file's metadata and persistent copy. Call only after showing its ID and receiving explicit user confirmation.",
+      parameters: ForgetFileParameters,
+      factory({ config: rawConfig, toolContext }) {
+        const config = resolvePluginConfig(rawConfig);
+        const store = storeFor(config);
+        return {
+          name: "assistant_forget_file",
+          label: "Xóa tệp đã ghi nhớ",
+          description:
+            "Delete one remembered file's metadata and persistent copy. Call only after showing its ID and receiving explicit user confirmation.",
+          parameters: ForgetFileParameters,
+          executionMode: "sequential",
+          async execute(_id, params) {
+            const input = params as { fileId: string; confirmed: true };
+            const workspaceDir = toolContext.workspaceDir;
+            if (!workspaceDir) throw new Error("The active OpenClaw workspace directory is unavailable.");
+            const ownerKey = resolveOwnerKey(toolContext, config.ownerMode);
+            const file = await store.forgetStoredFile(ownerKey, input.fileId);
+            if (!file) return success("Không tìm thấy tệp đang hoạt động với ID này.", { forgotten: false });
+            const removedCopy = await removeStoredFile(workspaceDir, file.storageRef).catch(() => false);
+            return success(
+              removedCopy
+                ? `Đã quên tệp “${file.label}” và xóa bản lưu.`
+                : `Đã xóa metadata của tệp “${file.label}”; bản lưu vật lý không tồn tại hoặc không thể dọn dẹp.`,
+              {
+              forgotten: true,
+              removedCopy,
+              fileId: input.fileId,
+              },
+            );
           },
         };
       },

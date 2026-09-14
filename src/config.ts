@@ -10,6 +10,7 @@ export interface PluginConfig {
   maxRecallResults: number;
   documentChunkChars: number;
   documentChunkOverlapChars: number;
+  maxStoredFileMb: number;
 }
 
 function finiteInteger(value: unknown, fallback: number, min: number, max: number): number {
@@ -54,6 +55,7 @@ export function resolvePluginConfig(raw: Record<string, unknown> | null | undefi
     maxRecallResults: finiteInteger(raw?.maxRecallResults, 8, 1, 30),
     documentChunkChars,
     documentChunkOverlapChars: Math.min(overlap, Math.floor(documentChunkChars / 2)),
+    maxStoredFileMb: finiteInteger(raw?.maxStoredFileMb, 20, 1, 25),
   };
 }
 

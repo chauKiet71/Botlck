@@ -8,6 +8,8 @@ An OpenClaw native plugin that adds structured, owner-scoped long-term memory an
 - Deduplication, conflict replacement (`supersedesId`), and soft deletion.
 - Owner isolation using the agent, requester, channel/requester pair, or session.
 - Document chunking and PostgreSQL full-text retrieval with citations.
+- Labeled attachment storage without reading or extracting the file contents.
+- File metadata search in Neon and persistent file copies on the OpenClaw workspace volume.
 - Neon PostgreSQL persistence shared safely by multiple OpenClaw Gateway processes.
 - Automatic, idempotent database migrations for missing schemas, tables, columns, and indexes.
 - Workspace instructions that teach the agent when to remember, recall, cite, and request confirmation.
@@ -133,6 +135,11 @@ The Neon database role must have permission to create the configured schema, tab
 | `assistant_search_documents` | Retrieve evidence with citations |
 | `assistant_list_documents` | Review indexed documents and their IDs |
 | `assistant_remove_document` | Permanently remove a confirmed document index |
+| `assistant_remember_file` | Copy an inbound attachment to persistent storage and save its label |
+| `assistant_find_files` | Search file metadata without reading file contents |
+| `assistant_get_file` | Resolve one stored file so the message tool can send it back |
+| `assistant_list_files` | Review active remembered files and their IDs |
+| `assistant_forget_file` | Remove a confirmed file record and its persistent copy |
 
 ## Owner isolation
 
@@ -140,11 +147,23 @@ The Neon database role must have permission to create the configured schema, tab
 
 For a shared but trusted gateway, use `channel-requester`. For mutually untrusted tenants, run separate gateways and credentials or put an authenticated multi-tenant service in front of a production database.
 
+## Labeled file workflow
+
+When a user sends a Telegram attachment with a caption such as `đây là CV của tôi`, OpenClaw stages the inbound file under the active workspace. The plugin copies those bytes—without parsing them—to:
+
+```text
+/data/workspace/.assistant-files/<owner-hash>/<generated-id>.pdf
+```
+
+Neon stores only the owner-scoped label, original filename, MIME type, size, tags, source channel, and managed storage reference in `openclaw_assistant.stored_files`. The Railway volume at `/data` must remain attached; deleting or replacing that volume removes the stored file bytes even though Neon metadata may remain.
+
+When the user later asks for the file, the agent searches metadata, resolves the managed path, and passes that path to OpenClaw's `message` tool for Telegram delivery. `maxStoredFileMb` defaults to 20 MB and can be set from 1–25 MB in the plugin config.
+
 ## Current document boundary
 
-The MVP indexes extracted text, not binary PDF/DOCX files directly. OpenClaw or another extractor must first produce the text. A later production phase should add:
+The document index still requires extracted text. Labeled attachment storage is separate and intentionally does not inspect file contents. A later production phase may add:
 
-1. An upload API and object storage for original files.
+1. S3-compatible object storage when files need to survive outside one Railway volume.
 2. PDF/DOCX/OCR extraction workers.
 3. Embeddings and reranking in addition to FTS5.
 4. Page/section locators rather than generic chunk locators.

@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
 
-const MIGRATION_VERSION = 1;
+const MIGRATION_VERSION = 2;
 
 export function quoteIdentifier(identifier: string): string {
   if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(identifier)) {
@@ -122,8 +122,52 @@ export function migrationStatements(schemaName: string): string[] {
       ON ${schema}.document_chunks(owner_key, document_id)`,
     `CREATE INDEX IF NOT EXISTS document_chunks_search_gin
       ON ${schema}.document_chunks USING GIN (to_tsvector('simple'::regconfig, coalesce(content, '')))`,
+    `CREATE TABLE IF NOT EXISTS ${schema}.stored_files (
+      id TEXT PRIMARY KEY,
+      owner_key TEXT NOT NULL,
+      label TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      storage_ref TEXT NOT NULL,
+      mime_type TEXT,
+      file_size BIGINT NOT NULL DEFAULT 0 CHECK (file_size >= 0),
+      tags_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      source_channel TEXT,
+      source_message_id TEXT,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'deleted')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      deleted_at TIMESTAMPTZ
+    )`,
+    `ALTER TABLE ${schema}.stored_files ADD COLUMN IF NOT EXISTS id TEXT DEFAULT gen_random_uuid()::text`,
+    `ALTER TABLE ${schema}.stored_files ADD COLUMN IF NOT EXISTS owner_key TEXT NOT NULL DEFAULT 'legacy'`,
+    `ALTER TABLE ${schema}.stored_files ADD COLUMN IF NOT EXISTS label TEXT NOT NULL DEFAULT 'Tệp không có nhãn'`,
+    `ALTER TABLE ${schema}.stored_files ADD COLUMN IF NOT EXISTS original_name TEXT NOT NULL DEFAULT 'file'`,
+    `ALTER TABLE ${schema}.stored_files ADD COLUMN IF NOT EXISTS storage_ref TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE ${schema}.stored_files ADD COLUMN IF NOT EXISTS mime_type TEXT`,
+    `ALTER TABLE ${schema}.stored_files ADD COLUMN IF NOT EXISTS file_size BIGINT NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${schema}.stored_files ADD COLUMN IF NOT EXISTS tags_json JSONB NOT NULL DEFAULT '[]'::jsonb`,
+    `ALTER TABLE ${schema}.stored_files ADD COLUMN IF NOT EXISTS source_channel TEXT`,
+    `ALTER TABLE ${schema}.stored_files ADD COLUMN IF NOT EXISTS source_message_id TEXT`,
+    `ALTER TABLE ${schema}.stored_files ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'`,
+    `ALTER TABLE ${schema}.stored_files ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
+    `ALTER TABLE ${schema}.stored_files ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
+    `ALTER TABLE ${schema}.stored_files ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
+    `UPDATE ${schema}.stored_files SET id = gen_random_uuid()::text WHERE id IS NULL OR btrim(id) = ''`,
+    `ALTER TABLE ${schema}.stored_files ALTER COLUMN id SET NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS stored_files_id_unique ON ${schema}.stored_files(id)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS stored_files_owner_label_active
+      ON ${schema}.stored_files(owner_key, lower(label)) WHERE status = 'active'`,
+    `CREATE INDEX IF NOT EXISTS stored_files_owner_updated
+      ON ${schema}.stored_files(owner_key, status, updated_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS stored_files_search_gin
+      ON ${schema}.stored_files USING GIN (
+        to_tsvector('simple'::regconfig, coalesce(label, '') || ' ' || coalesce(original_name, ''))
+      )`,
     `INSERT INTO ${schema}.schema_migrations(version, name)
-      VALUES (${MIGRATION_VERSION}, 'initial_neon_postgresql_schema')
+      VALUES (1, 'initial_neon_postgresql_schema')
+      ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name`,
+    `INSERT INTO ${schema}.schema_migrations(version, name)
+      VALUES (${MIGRATION_VERSION}, 'stored_file_metadata')
       ON CONFLICT (version) DO UPDATE SET name = EXCLUDED.name`,
   ];
 }

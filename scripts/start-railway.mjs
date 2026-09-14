@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
@@ -77,6 +77,21 @@ for (const filename of ["AGENTS.md", "SOUL.md", "USER.md", "MEMORY.md"]) {
   const source = join(appDir, "workspace", filename);
   const destination = join(workspaceDir, filename);
   if (!existsSync(destination)) copyFileSync(source, destination);
+}
+
+// Preserve user edits while adding newly shipped policy sections to an existing volume.
+const agentsSourcePath = join(appDir, "workspace", "AGENTS.md");
+const agentsDestinationPath = join(workspaceDir, "AGENTS.md");
+const storedFilePolicyHeading = "## Stored file policy";
+const currentAgentInstructions = readFileSync(agentsDestinationPath, "utf8");
+if (!currentAgentInstructions.includes(storedFilePolicyHeading)) {
+  const sourceAgentInstructions = readFileSync(agentsSourcePath, "utf8");
+  const policyStart = sourceAgentInstructions.indexOf(storedFilePolicyHeading);
+  const policyEnd = sourceAgentInstructions.indexOf("\n## ", policyStart + storedFilePolicyHeading.length);
+  const storedFilePolicy = sourceAgentInstructions
+    .slice(policyStart, policyEnd >= 0 ? policyEnd : undefined)
+    .trim();
+  if (storedFilePolicy) appendFileSync(agentsDestinationPath, `\n\n${storedFilePolicy}\n`, "utf8");
 }
 
 runOpenClaw(["config", "set", "gateway.mode", "local"]);

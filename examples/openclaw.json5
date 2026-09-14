@@ -27,6 +27,8 @@
           maxRecallResults: 8,
           documentChunkChars: 1600,
           documentChunkOverlapChars: 200,
+          // Files are copied byte-for-byte without being parsed.
+          maxStoredFileMb: 20,
         },
       },
     },

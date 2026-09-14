@@ -76,3 +76,36 @@ export interface DocumentSearchHit {
   content: string;
   citation: string;
 }
+
+export interface StoredFileInput {
+  label: string;
+  originalName: string;
+  storageRef: string;
+  mimeType?: string;
+  fileSize: number;
+  tags?: string[];
+  sourceChannel?: string;
+  sourceMessageId?: string;
+  replaceExisting?: boolean;
+}
+
+export interface StoredFileRecord {
+  id: string;
+  ownerKey: string;
+  label: string;
+  originalName: string;
+  storageRef: string;
+  mimeType: string | null;
+  fileSize: number;
+  tags: string[];
+  sourceChannel: string | null;
+  sourceMessageId: string | null;
+  status: "active" | "deleted";
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export interface StoredFileSearchHit extends StoredFileRecord {
+  deliveryPath: string;
+}

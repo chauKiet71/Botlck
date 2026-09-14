@@ -11,6 +11,8 @@ import type {
   MemoryInput,
   MemoryKind,
   MemoryRecord,
+  StoredFileInput,
+  StoredFileRecord,
 } from "./types.js";
 
 interface RawMemoryRow extends QueryResultRow {
@@ -52,6 +54,23 @@ interface RawDocumentSearchRow extends QueryResultRow {
   chunk_index: number;
   locator: string;
   content: string;
+}
+
+interface RawStoredFileRow extends QueryResultRow {
+  id: string;
+  owner_key: string;
+  label: string;
+  original_name: string;
+  storage_ref: string;
+  mime_type: string | null;
+  file_size: string | number;
+  tags_json: unknown;
+  source_channel: string | null;
+  source_message_id: string | null;
+  status: "active" | "deleted";
+  created_at: Date | string;
+  updated_at: Date | string;
+  deleted_at: Date | string | null;
 }
 
 function toIso(value: Date | string): string {
@@ -113,6 +132,25 @@ function documentFromRow(row: RawDocumentRow): DocumentRecord {
     chunkCount: Number(row.chunk_count),
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
+  };
+}
+
+function storedFileFromRow(row: RawStoredFileRow): StoredFileRecord {
+  return {
+    id: row.id,
+    ownerKey: row.owner_key,
+    label: row.label,
+    originalName: row.original_name,
+    storageRef: row.storage_ref,
+    mimeType: row.mime_type,
+    fileSize: Number(row.file_size),
+    tags: parseTags(row.tags_json),
+    sourceChannel: row.source_channel,
+    sourceMessageId: row.source_message_id,
+    status: row.status,
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+    deletedAt: row.deleted_at ? toIso(row.deleted_at) : null,
   };
 }
 
@@ -457,6 +495,147 @@ export class AssistantStore {
       [documentId, ownerKey],
     );
     return (result.rowCount ?? 0) > 0;
+  }
+
+  async findActiveFileByLabel(ownerKey: string, label: string): Promise<StoredFileRecord | null> {
+    await this.ready();
+    const result = await this.#pool.query<RawStoredFileRow>(
+      `SELECT * FROM ${this.#schema}.stored_files
+       WHERE owner_key = $1 AND lower(label) = lower($2) AND status = 'active'
+       LIMIT 1`,
+      [ownerKey, label.trim()],
+    );
+    return result.rows[0] ? storedFileFromRow(result.rows[0]) : null;
+  }
+
+  async rememberFile(
+    ownerKey: string,
+    input: StoredFileInput,
+  ): Promise<{ file: StoredFileRecord; replacedStorageRef: string | null }> {
+    await this.ready();
+    const label = input.label.trim();
+    const originalName = input.originalName.trim();
+    const storageRef = input.storageRef.trim();
+    if (!label) throw new Error("File label cannot be empty.");
+    if (!originalName) throw new Error("Original file name cannot be empty.");
+    if (!storageRef) throw new Error("Stored file reference cannot be empty.");
+
+    const client = await this.#pool.connect();
+    try {
+      await client.query("BEGIN");
+      const existing = await client.query<RawStoredFileRow>(
+        `SELECT * FROM ${this.#schema}.stored_files
+         WHERE owner_key = $1 AND lower(label) = lower($2) AND status = 'active'
+         FOR UPDATE`,
+        [ownerKey, label],
+      );
+      const existingRow = existing.rows[0];
+      if (existingRow && !input.replaceExisting) {
+        throw new Error(`A stored file already uses the label “${label}”. Set replaceExisting to true to replace it.`);
+      }
+      if (existingRow) {
+        await client.query(
+          `UPDATE ${this.#schema}.stored_files
+           SET status = 'deleted', deleted_at = now(), updated_at = now()
+           WHERE id = $1 AND owner_key = $2`,
+          [existingRow.id, ownerKey],
+        );
+      }
+
+      const inserted = await client.query<RawStoredFileRow>(
+        `INSERT INTO ${this.#schema}.stored_files (
+          id, owner_key, label, original_name, storage_ref, mime_type, file_size,
+          tags_json, source_channel, source_message_id, status, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, 'active', now(), now())
+        RETURNING *`,
+        [
+          randomUUID(),
+          ownerKey,
+          label,
+          originalName,
+          storageRef,
+          input.mimeType?.trim() || null,
+          Math.max(0, Math.trunc(input.fileSize)),
+          JSON.stringify(normalizeTags(input.tags)),
+          input.sourceChannel?.trim() || null,
+          input.sourceMessageId?.trim() || null,
+        ],
+      );
+      if (!inserted.rows[0]) throw new Error("Stored file insert did not return a row.");
+      await client.query("COMMIT");
+      return {
+        file: storedFileFromRow(inserted.rows[0]),
+        replacedStorageRef: existingRow?.storage_ref ?? null,
+      };
+    } catch (error) {
+      await this.#rollback(client);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getStoredFile(ownerKey: string, fileId: string): Promise<StoredFileRecord | null> {
+    await this.ready();
+    const result = await this.#pool.query<RawStoredFileRow>(
+      `SELECT * FROM ${this.#schema}.stored_files
+       WHERE owner_key = $1 AND id = $2 AND status = 'active'`,
+      [ownerKey, fileId],
+    );
+    return result.rows[0] ? storedFileFromRow(result.rows[0]) : null;
+  }
+
+  async searchStoredFiles(ownerKey: string, query: string, limit = 10): Promise<StoredFileRecord[]> {
+    await this.ready();
+    const cleanedQuery = query.trim();
+    if (!cleanedQuery) return this.listStoredFiles(ownerKey, limit);
+    const safeLimit = Math.trunc(clamp(limit, 10, 1, 30));
+    const result = await this.#pool.query<RawStoredFileRow>(
+      `SELECT * FROM ${this.#schema}.stored_files
+       WHERE owner_key = $1
+         AND status = 'active'
+         AND (
+           to_tsvector('simple'::regconfig, coalesce(label, '') || ' ' || coalesce(original_name, ''))
+             @@ websearch_to_tsquery('simple'::regconfig, $2)
+           OR label ILIKE '%' || $2 || '%'
+           OR original_name ILIKE '%' || $2 || '%'
+           OR tags_json::text ILIKE '%' || $2 || '%'
+         )
+       ORDER BY
+         ts_rank_cd(
+           to_tsvector('simple'::regconfig, coalesce(label, '') || ' ' || coalesce(original_name, '')),
+           websearch_to_tsquery('simple'::regconfig, $2)
+         ) DESC,
+         updated_at DESC
+       LIMIT $3`,
+      [ownerKey, cleanedQuery, safeLimit],
+    );
+    return result.rows.map(storedFileFromRow);
+  }
+
+  async listStoredFiles(ownerKey: string, limit = 20): Promise<StoredFileRecord[]> {
+    await this.ready();
+    const safeLimit = Math.trunc(clamp(limit, 20, 1, 100));
+    const result = await this.#pool.query<RawStoredFileRow>(
+      `SELECT * FROM ${this.#schema}.stored_files
+       WHERE owner_key = $1 AND status = 'active'
+       ORDER BY updated_at DESC
+       LIMIT $2`,
+      [ownerKey, safeLimit],
+    );
+    return result.rows.map(storedFileFromRow);
+  }
+
+  async forgetStoredFile(ownerKey: string, fileId: string): Promise<StoredFileRecord | null> {
+    await this.ready();
+    const result = await this.#pool.query<RawStoredFileRow>(
+      `UPDATE ${this.#schema}.stored_files
+       SET status = 'deleted', deleted_at = now(), updated_at = now()
+       WHERE id = $1 AND owner_key = $2 AND status = 'active'
+       RETURNING *`,
+      [fileId, ownerKey],
+    );
+    return result.rows[0] ? storedFileFromRow(result.rows[0]) : null;
   }
 
   async #rollback(client: PoolClient): Promise<void> {

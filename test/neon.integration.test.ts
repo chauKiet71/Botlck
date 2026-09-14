@@ -10,7 +10,7 @@ import { AssistantStore } from "../src/store.js";
 const testDatabaseUrl = process.env.TEST_NEON_DATABASE_URL?.trim();
 
 test(
-  "runs migrations and memory/document operations against Neon",
+  "runs migrations and memory/document/file metadata operations against Neon",
   { skip: testDatabaseUrl ? false : "Set TEST_NEON_DATABASE_URL to run the Neon integration test." },
   async () => {
     const schema = `assistant_test_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
@@ -65,6 +65,23 @@ test(
       assert.ok((await store.searchDocuments("agent:main", "Neon PostgreSQL")).length >= 1);
       assert.equal((await store.listDocuments("agent:main")).length, 1);
       assert.equal(await store.removeDocument("agent:main", indexed.document.id), true);
+
+      const storedFile = await store.rememberFile("agent:main", {
+        label: "CV của tôi",
+        originalName: "cv.pdf",
+        storageRef: ".assistant-files/owner/cv.pdf",
+        mimeType: "application/pdf",
+        fileSize: 1234,
+        tags: ["cv", "cá nhân"],
+      });
+      assert.equal(storedFile.file.label, "CV của tôi");
+      assert.equal((await store.searchStoredFiles("agent:main", "CV")).length, 1);
+      assert.equal((await store.searchStoredFiles("agent:other", "CV")).length, 0);
+      assert.equal((await store.listStoredFiles("agent:main")).length, 1);
+      assert.equal(
+        (await store.forgetStoredFile("agent:main", storedFile.file.id))?.status,
+        "deleted",
+      );
     } finally {
       await store.close();
       const cleanupPool = new Pool({ connectionString: testDatabaseUrl! });
