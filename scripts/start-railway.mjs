@@ -16,7 +16,7 @@ process.env.OPENCLAW_WORKSPACE_DIR = workspaceDir;
 process.env.OPENCLAW_GATEWAY_PORT = gatewayPort;
 process.env.OPENCLAW_DISABLE_BONJOUR ||= "1";
 
-const requiredVariables = ["OPENAI_API_KEY", "DATABASE_URL", "OPENCLAW_GATEWAY_TOKEN"];
+const requiredVariables = ["DATABASE_URL", "OPENCLAW_GATEWAY_TOKEN"];
 const missingVariables = requiredVariables.filter((name) => !process.env[name]?.trim());
 if (missingVariables.length > 0) {
   console.error(
@@ -24,6 +24,19 @@ if (missingVariables.length > 0) {
   );
   process.exit(1);
 }
+
+const hasOpenRouterKey = Boolean(process.env.OPENROUTER_API_KEY?.trim());
+const hasOpenAiKey = Boolean(process.env.OPENAI_API_KEY?.trim());
+if (!hasOpenRouterKey && !hasOpenAiKey) {
+  console.error(
+    "[railway] Missing model credentials. Set OPENROUTER_API_KEY or OPENAI_API_KEY.",
+  );
+  process.exit(1);
+}
+
+const primaryModel =
+  process.env.OPENCLAW_PRIMARY_MODEL?.trim() ||
+  (hasOpenRouterKey ? "openrouter/openrouter/free" : "openai/gpt-5.5");
 
 mkdirSync(stateDir, { recursive: true });
 mkdirSync(workspaceDir, { recursive: true });
@@ -53,7 +66,7 @@ if (!existsSync(configPath)) {
     "--mode",
     "local",
     "--auth-choice",
-    "openai-api-key",
+    hasOpenRouterKey ? "openrouter-api-key" : "openai-api-key",
     "--secret-input-mode",
     "ref",
     "--gateway-auth",
@@ -117,24 +130,35 @@ if (!pluginAvailable) {
   runOpenClaw(["plugins", "install", "-l", appDir]);
 }
 runOpenClaw(["plugins", "enable", pluginId]);
+const allowedPlugins = [
+  "browser",
+  "canvas",
+  "codex",
+  "device-pair",
+  "file-transfer",
+  "memory-core",
+  pluginId,
+  "phone-control",
+  "talk-voice",
+  "telegram",
+];
+if (hasOpenRouterKey) allowedPlugins.push("openrouter");
 runOpenClaw([
   "config",
   "set",
   "plugins.allow",
-  JSON.stringify([
-    "browser",
-    "canvas",
-    "codex",
-    "device-pair",
-    "file-transfer",
-    "memory-core",
-    pluginId,
-    "phone-control",
-    "talk-voice",
-    "telegram",
-  ]),
+  JSON.stringify(allowedPlugins),
   "--strict-json",
 ]);
+
+if (hasOpenRouterKey) runOpenClaw(["plugins", "enable", "openrouter"]);
+
+// A previous `models scan --set-default` may have stored transient free-model
+// fallbacks. Use one deterministic Railway default instead; operators can
+// override it with OPENCLAW_PRIMARY_MODEL.
+runOpenClaw(["models", "fallbacks", "clear"]);
+runOpenClaw(["models", "set", primaryModel]);
+console.log(`[railway] Primary model configured: ${primaryModel}`);
 
 if (process.env.TELEGRAM_BOT_TOKEN?.trim()) {
   runOpenClaw(["channels", "add", "--channel", "telegram", "--use-env"]);

@@ -96,13 +96,15 @@ OPENCLAW_GATEWAY_PORT=8080
 OPENCLAW_STATE_DIR=/data/.openclaw
 OPENCLAW_WORKSPACE_DIR=/data/workspace
 OPENCLAW_GATEWAY_TOKEN=<random-admin-secret>
-OPENAI_API_KEY=<openai-api-key>
+OPENROUTER_API_KEY=<openrouter-api-key>
+OPENCLAW_PRIMARY_MODEL=openrouter/openrouter/free
 DATABASE_URL=<neon-pooled-connection-string>
 TELEGRAM_BOT_TOKEN=<telegram-bot-token>
 RAILWAY_RUN_UID=0
 ```
 
 `TELEGRAM_BOT_TOKEN` is optional for Gateway startup; omit it only when Telegram should remain disabled. `RAILWAY_RUN_UID=0` lets the process initialize a newly attached Railway volume, whose mount is owned by root.
+Set either `OPENROUTER_API_KEY` or `OPENAI_API_KEY`; OpenRouter is selected when both are present. `OPENCLAW_PRIMARY_MODEL` is optional and defaults to `openrouter/openrouter/free` with OpenRouter, or `openai/gpt-5.5` with OpenAI. For a more predictable paid OpenRouter model, set a provider-qualified value such as `openrouter/openai/gpt-4.1-mini`.
 
 The health check is `/startupz`. After deployment, open `https://<railway-domain>/openclaw`, enter `OPENCLAW_GATEWAY_TOKEN`, then run these read-only checks in the Railway shell:
 
