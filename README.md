@@ -96,15 +96,28 @@ OPENCLAW_GATEWAY_PORT=8080
 OPENCLAW_STATE_DIR=/data/.openclaw
 OPENCLAW_WORKSPACE_DIR=/data/workspace
 OPENCLAW_GATEWAY_TOKEN=<random-admin-secret>
+NINE_ROUTER_API_KEY=<9router-api-key>
+NINE_ROUTER_BASE_URL=http://9router.railway.internal:20128/v1
+NINE_ROUTER_MODELS=openclaw
+OPENCLAW_PRIMARY_MODEL=9router/openclaw
 OPENROUTER_API_KEY=<openrouter-api-key>
-OPENCLAW_PRIMARY_MODEL=openrouter/deepseek/deepseek-v4-flash-0731
+OPENCLAW_FALLBACK_MODELS=openrouter/google/gemini-3-flash
+OPENCLAW_ALLOWED_MODELS=9router/*,openrouter/*
+OPENCLAW_MODEL_ALIASES=router=9router/openclaw,fast=openrouter/google/gemini-3-flash
 DATABASE_URL=<neon-pooled-connection-string>
 TELEGRAM_BOT_TOKEN=<telegram-bot-token>
 RAILWAY_RUN_UID=0
 ```
 
 `TELEGRAM_BOT_TOKEN` is optional for Gateway startup; omit it only when Telegram should remain disabled. `RAILWAY_RUN_UID=0` lets the process initialize a newly attached Railway volume, whose mount is owned by root.
-Set either `OPENROUTER_API_KEY` or `OPENAI_API_KEY`; OpenRouter is selected when both are present. `OPENCLAW_PRIMARY_MODEL` is optional and defaults to `openrouter/deepseek/deepseek-v4-flash-0731` with OpenRouter, or `openai/gpt-5.5` with OpenAI. You can override it with another provider-qualified value such as `openrouter/openai/gpt-oss-20b`.
+Set at least one model credential: `NINE_ROUTER_API_KEY`, `OPENROUTER_API_KEY`, or `OPENAI_API_KEY`. When using 9Router, set `NINE_ROUTER_BASE_URL` as well; services in the same Railway project should use the private URL shown above. `NINE_ROUTER_MODELS` is an optional comma-separated list of 9Router combo/model IDs and defaults to `openclaw`. Model references must use the provider-qualified `provider/model` format.
+
+- `OPENCLAW_PRIMARY_MODEL` sets the default model. It defaults to `openrouter/deepseek/deepseek-v4-flash-0731` with OpenRouter, or `openai/gpt-5.5` with OpenAI.
+- `OPENCLAW_FALLBACK_MODELS` is an optional, ordered comma-separated fallback chain.
+- `OPENCLAW_ALLOWED_MODELS` controls which models appear in the picker. It accepts exact models and provider wildcards such as `openrouter/*`. When omitted, every authenticated provider is added as a wildcard automatically.
+- `OPENCLAW_MODEL_ALIASES` is an optional comma-separated list in `alias=provider/model` format. Each model can have one alias.
+
+The container validates these variables on startup and applies them on every deploy. After it is running, send `/model` or `/model list` in Telegram (or use the Control UI picker) to select an allowed model for the current session without restarting. Send `/model default` to return that session to `OPENCLAW_PRIMARY_MODEL`; use `/model status` to inspect the active selection.
 
 The health check is `/startupz`. After deployment, open `https://<railway-domain>/openclaw`, enter `OPENCLAW_GATEWAY_TOKEN`, then run these read-only checks in the Railway shell:
 

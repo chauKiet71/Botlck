@@ -2,6 +2,7 @@ import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync } fro
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
+import { resolveRailwayModelConfig } from "../dist/src/railway-model-config.js";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const appDir = resolve(scriptDir, "..");
@@ -27,18 +28,21 @@ if (missingVariables.length > 0) {
 
 const hasOpenRouterKey = Boolean(process.env.OPENROUTER_API_KEY?.trim());
 const hasOpenAiKey = Boolean(process.env.OPENAI_API_KEY?.trim());
-if (!hasOpenRouterKey && !hasOpenAiKey) {
+const hasNineRouterKey = Boolean(process.env.NINE_ROUTER_API_KEY?.trim());
+if (!hasOpenRouterKey && !hasOpenAiKey && !hasNineRouterKey) {
   console.error(
-    "[railway] Missing model credentials. Set OPENROUTER_API_KEY or OPENAI_API_KEY.",
+    "[railway] Missing model credentials. Set NINE_ROUTER_API_KEY, OPENROUTER_API_KEY, or OPENAI_API_KEY.",
   );
   process.exit(1);
 }
 
-const primaryModel =
-  process.env.OPENCLAW_PRIMARY_MODEL?.trim() ||
-  (hasOpenRouterKey
-    ? "openrouter/deepseek/deepseek-v4-flash-0731"
-    : "openai/gpt-5.5");
+let modelConfig;
+try {
+  modelConfig = resolveRailwayModelConfig(process.env);
+} catch (error) {
+  console.error(`[railway] Invalid model configuration: ${error.message}`);
+  process.exit(1);
+}
 
 mkdirSync(stateDir, { recursive: true });
 mkdirSync(workspaceDir, { recursive: true });
@@ -68,7 +72,7 @@ if (!existsSync(configPath)) {
     "--mode",
     "local",
     "--auth-choice",
-    hasOpenRouterKey ? "openrouter-api-key" : "openai-api-key",
+    hasOpenRouterKey ? "openrouter-api-key" : hasOpenAiKey ? "openai-api-key" : "skip",
     "--secret-input-mode",
     "ref",
     "--gateway-auth",
@@ -155,12 +159,36 @@ runOpenClaw([
 
 if (hasOpenRouterKey) runOpenClaw(["plugins", "enable", "openrouter"]);
 
-// A previous `models scan --set-default` may have stored transient free-model
-// fallbacks. Use one deterministic Railway default instead; operators can
-// override it with OPENCLAW_PRIMARY_MODEL.
+// Railway variables are the source of truth so redeploys remain deterministic.
+// The catalog also powers the Control UI and the per-session /model picker.
+runOpenClaw(["config", "set", "models.mode", JSON.stringify("merge"), "--strict-json"]);
+for (const [providerId, provider] of Object.entries(modelConfig.providers)) {
+  runOpenClaw([
+    "config",
+    "set",
+    `models.providers.${providerId}`,
+    JSON.stringify(provider),
+    "--strict-json",
+    "--replace",
+  ]);
+}
+runOpenClaw([
+  "config",
+  "set",
+  "agents.defaults.models",
+  JSON.stringify(modelConfig.catalog),
+  "--strict-json",
+  "--replace",
+]);
 runOpenClaw(["models", "fallbacks", "clear"]);
-runOpenClaw(["models", "set", primaryModel]);
-console.log(`[railway] Primary model configured: ${primaryModel}`);
+runOpenClaw(["models", "set", modelConfig.primary]);
+for (const fallback of modelConfig.fallbacks) {
+  runOpenClaw(["models", "fallbacks", "add", fallback]);
+}
+console.log(`[railway] Primary model configured: ${modelConfig.primary}`);
+console.log(
+  `[railway] Model fallbacks configured: ${modelConfig.fallbacks.length > 0 ? modelConfig.fallbacks.join(", ") : "none"}`,
+);
 
 if (process.env.TELEGRAM_BOT_TOKEN?.trim()) {
   runOpenClaw(["channels", "add", "--channel", "telegram", "--use-env"]);

@@ -9,6 +9,97 @@ import { resolvePluginConfig } from "../src/config.js";
 import { persistInboundFile, removeStoredFile, resolveStoredFilePath } from "../src/file-storage.js";
 import { migrationStatements, quoteIdentifier } from "../src/migrations.js";
 import { resolveOwnerKey } from "../src/owner.js";
+import { resolveRailwayModelConfig } from "../src/railway-model-config.js";
+
+test("builds a switchable Railway model catalog with fallbacks and aliases", () => {
+  const config = resolveRailwayModelConfig({
+    OPENROUTER_API_KEY: "secret",
+    OPENAI_API_KEY: "secret",
+    OPENCLAW_PRIMARY_MODEL: "openrouter/anthropic/claude-sonnet-4.6",
+    OPENCLAW_FALLBACK_MODELS: "openai/gpt-5.5, openrouter/google/gemini-3-flash",
+    OPENCLAW_ALLOWED_MODELS: "openrouter/*,openai/gpt-5.5",
+    OPENCLAW_MODEL_ALIASES: "fast=openrouter/google/gemini-3-flash,smart=openrouter/anthropic/claude-sonnet-4.6",
+  });
+
+  assert.equal(config.primary, "openrouter/anthropic/claude-sonnet-4.6");
+  assert.deepEqual(config.fallbacks, ["openai/gpt-5.5", "openrouter/google/gemini-3-flash"]);
+  assert.deepEqual(config.catalog["openrouter/*"], {});
+  assert.deepEqual(config.catalog["openrouter/google/gemini-3-flash"], { alias: "fast" });
+  assert.deepEqual(config.catalog["openrouter/anthropic/claude-sonnet-4.6"], { alias: "smart" });
+});
+
+test("uses authenticated providers for the default /model catalog", () => {
+  const config = resolveRailwayModelConfig({ OPENAI_API_KEY: "secret" });
+
+  assert.equal(config.primary, "openai/gpt-5.5");
+  assert.deepEqual(config.catalog, {
+    "openai/*": {},
+    "openai/gpt-5.5": {},
+  });
+});
+
+test("registers 9Router as an OpenAI-compatible custom provider", () => {
+  const config = resolveRailwayModelConfig({
+    NINE_ROUTER_API_KEY: "secret",
+    NINE_ROUTER_BASE_URL: "http://9router.railway.internal:20128/v1/",
+    OPENCLAW_PRIMARY_MODEL: "9router/openclaw",
+  });
+
+  assert.equal(config.primary, "9router/openclaw");
+  assert.deepEqual(config.catalog["9router/*"], {});
+  assert.deepEqual(config.providers["9router"], {
+    baseUrl: "http://9router.railway.internal:20128/v1",
+    apiKey: {
+      source: "env",
+      provider: "default",
+      id: "NINE_ROUTER_API_KEY",
+    },
+    api: "openai-completions",
+    models: [{ id: "openclaw", name: "openclaw" }],
+  });
+});
+
+test("rejects malformed Railway model configuration", () => {
+  assert.throws(
+    () =>
+      resolveRailwayModelConfig({
+        NINE_ROUTER_API_KEY: "secret",
+      }),
+    /must be set together/,
+  );
+  assert.throws(
+    () =>
+      resolveRailwayModelConfig({
+        OPENAI_API_KEY: "secret",
+        OPENCLAW_PRIMARY_MODEL: "gpt-5.5",
+      }),
+    /provider\/model/,
+  );
+  assert.throws(
+    () =>
+      resolveRailwayModelConfig({
+        OPENAI_API_KEY: "secret",
+        OPENCLAW_FALLBACK_MODELS: "openai/gpt-5.5",
+      }),
+    /must not contain/,
+  );
+  assert.throws(
+    () =>
+      resolveRailwayModelConfig({
+        OPENAI_API_KEY: "secret",
+        OPENCLAW_MODEL_ALIASES: "bad alias=openai/gpt-5.4",
+      }),
+    /invalid alias/,
+  );
+  assert.throws(
+    () =>
+      resolveRailwayModelConfig({
+        OPENAI_API_KEY: "secret",
+        OPENCLAW_ALLOWED_MODELS: "openrouter/foo//bar",
+      }),
+    /invalid model reference/,
+  );
+});
 
 test("resolves personal and shared owner scopes", () => {
   const context = {
