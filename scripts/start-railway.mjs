@@ -141,6 +141,16 @@ if (!pluginAvailable) {
   runOpenClaw(["plugins", "install", "-l", appDir]);
 }
 runOpenClaw(["plugins", "enable", pluginId]);
+// The coding profile excludes plugin tools unless explicitly added to alsoAllow.
+if (process.env.NOTEBOOKLM_NOTEBOOK_ID?.trim()) {
+  const currentConfig = JSON.parse(readFileSync(configPath, "utf8"));
+  const notebookTools = [...new Set([
+    ...(currentConfig.tools?.alsoAllow ?? []),
+    "assistant_list_notebooklm",
+    "assistant_ask_notebooklm",
+  ])];
+  runOpenClaw(["config", "set", "tools.alsoAllow", JSON.stringify(notebookTools), "--strict-json"]);
+}
 const allowedPlugins = [
   "browser",
   "canvas",

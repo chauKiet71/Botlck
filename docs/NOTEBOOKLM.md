@@ -60,6 +60,8 @@ Nếu cấu hình công cụ dùng allowlist riêng, thêm `assistant_list_noteb
 
 Deploy phiên bản code này: Dockerfile cài sẵn CLI vào `/opt/notebooklm/bin/notebooklm`. Không chạy đăng nhập trình duyệt trong container.
 
+Startup tự thêm hai công cụ NotebookLM vào `tools.alsoAllow` khi đã cấu hình notebook, giữ các mục đang có. Điều này cần thiết với profile `coding`, vốn không tự bật công cụ plugin. Các deny rule riêng vẫn được giữ nguyên.
+
 Trong Railway Variables, đặt:
 
 ```dotenv
