@@ -118,7 +118,7 @@ for (const policyHeading of ["## Stored file policy", "## Reminder policy"]) {
 runOpenClaw(["config", "set", "gateway.mode", "local"]);
 runOpenClaw(["config", "set", "agents.defaults.userTimezone", "Asia/Ho_Chi_Minh"]);
 runOpenClaw(["config", "set", "agents.defaults.envelopeTimezone", "Asia/Ho_Chi_Minh"]);
-runOpenClaw(["config", "set", "agents.defaults.timeFormat", "24"]);
+runOpenClaw(["config", "set", "agents.defaults.timeFormat", JSON.stringify("24"), "--strict-json"]);
 runOpenClaw(["config", "set", "gateway.bind", "lan"]);
 runOpenClaw(["config", "set", "gateway.port", gatewayPort, "--strict-json"]);
 
