@@ -10,3 +10,6 @@ dist/
 !.env.example
 coverage/
 *.tgz
+.venv-notebooklm/
+.notebooklm/
+storage_state.json

@@ -8,6 +8,7 @@
     "dist",
     "openclaw.plugin.json",
     "workspace",
+    "docs",
     "README.md"
   ],
   "engines": {

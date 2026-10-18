@@ -4,6 +4,10 @@
 .env
 .env.*
 .openclaw
+.venv-notebooklm
+.notebooklm
+storage_state.json
+.tmp
 node_modules
 dist
 coverage

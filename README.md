@@ -140,6 +140,10 @@ The Neon database role must have permission to create the configured schema, tab
 
 ## Tool behavior
 
+### Live NotebookLM knowledge
+
+Set `NOTEBOOKLM_NOTEBOOK_ID=all` to let the agent select relevant notebooks from the live `assistant_list_notebooklm` catalog, then query their current sources using `assistant_ask_notebooklm`. Queries preserve citations, check the authorized channel/sender, and revalidate notebook membership. A UUID instead of `all` restricts access to one notebook. New notebooks appear on the next catalog lookup; new sources become usable after NotebookLM finishes processing them. See [Vietnamese login and deployment guide](docs/NOTEBOOKLM.md) for Windows login, routing behavior, Railway secrets, and troubleshooting. This uses the unofficial `notebooklm-py==0.8.5` client and remains inactive until configured.
+
 ### Vietnam reminder scheduling
 
 Railway startup sets the process timezone, agent user timezone, and message-envelope

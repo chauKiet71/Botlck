@@ -15,8 +15,11 @@ RUN npm run build
 FROM node:24-bookworm-slim AS runtime
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates tini \
+    && apt-get install -y --no-install-recommends ca-certificates tini python3 python3-venv \
     && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m venv /opt/notebooklm \
+    && /opt/notebooklm/bin/pip install --no-cache-dir notebooklm-py==0.8.5
 
 WORKDIR /app
 
@@ -28,6 +31,8 @@ COPY workspace ./workspace
 COPY scripts ./scripts
 
 ENV NODE_ENV=production \
+    NOTEBOOKLM_CLI=/opt/notebooklm/bin/notebooklm \
+    NOTEBOOKLM_HOME=/data/.notebooklm \
     OPENCLAW_GATEWAY_PORT=8080 \
     OPENCLAW_STATE_DIR=/data/.openclaw \
     OPENCLAW_WORKSPACE_DIR=/data/workspace \

@@ -87,6 +87,8 @@
   "version": "0.2.0",
   "contracts": {
     "tools": [
+      "assistant_list_notebooklm",
+      "assistant_ask_notebooklm",
       "assistant_remember",
       "assistant_recall",
       "assistant_list_memories",
