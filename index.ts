@@ -9,6 +9,7 @@ import {
 } from "./src/file-storage.js";
 import { resolveOwnerKey } from "./src/owner.js";
 import { AssistantStore } from "./src/store.js";
+import { guardCronCall, reminderContext } from "./src/reminder-policy.js";
 import {
   MEMORY_KINDS,
   type DocumentInput,
@@ -206,7 +207,7 @@ function success(text: string, details: Record<string, unknown>) {
   };
 }
 
-export default defineToolPlugin({
+const plugin = defineToolPlugin({
   id: "personal-assistant-memory",
   name: "Personal Assistant Memory",
   description: "Structured long-term memory and local document retrieval for OpenClaw.",
@@ -632,3 +633,12 @@ export default defineToolPlugin({
     }),
   ],
 });
+
+// Extend the same entry so defineToolPlugin's non-enumerable manifest metadata survives.
+const registerMemoryTools = plugin.register;
+plugin.register = (api) => {
+  registerMemoryTools(api);
+  api.on("before_tool_call", (event) => guardCronCall(event.toolName, event.params));
+  api.on("before_prompt_build", () => ({ prependContext: reminderContext() }));
+};
+export default plugin;

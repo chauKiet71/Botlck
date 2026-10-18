@@ -140,6 +140,30 @@ The Neon database role must have permission to create the configured schema, tab
 
 ## Tool behavior
 
+### Vietnam reminder scheduling
+
+Railway startup sets the process timezone, agent user timezone, and message-envelope
+timezone to `Asia/Ho_Chi_Minh`, with a 24-hour clock. The plugin supplies a fresh
+Vietnam timestamp and scheduling guidance on each prompt, including existing sessions.
+Startup adds the reminder policy to existing workspace instructions without replacing
+the user's other instructions.
+
+The plugin's `before_tool_call` guard rejects model-issued `cron add` and `cron update`
+requests whose one-shot timestamp lacks an explicit `+07:00` offset, is an invalid
+calendar date, or has already passed. Recurring cron expressions must explicitly set
+`tz: "Asia/Ho_Chi_Minh"`. The model must convert explicitly requested foreign times to
+Vietnam time before submitting them. Relative `every` intervals are unchanged.
+Rejected requests must be corrected or clarified before the bot confirms success.
+
+Simple reminders should use an isolated `agentTurn` with an exact-text-only prompt
+and explicit `announce` channel/recipient. Conflicting times require clarification.
+These semantic rules guide the model; the guard cannot prove that its chosen future
+date matches ambiguous natural language. Existing stored jobs and operator/admin
+CLI or RPC mutations are not rewritten by the model-tool guard.
+
+The existing hourly/daily schedules retain their stored times across redeploys;
+inspect them in the Control UI when migrating an older installation.
+
 | Tool | Purpose |
 | --- | --- |
 | `assistant_remember` | Save one durable fact or event |

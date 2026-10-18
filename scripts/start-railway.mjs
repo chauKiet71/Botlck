@@ -16,6 +16,7 @@ process.env.OPENCLAW_STATE_DIR = stateDir;
 process.env.OPENCLAW_WORKSPACE_DIR = workspaceDir;
 process.env.OPENCLAW_GATEWAY_PORT = gatewayPort;
 process.env.OPENCLAW_DISABLE_BONJOUR ||= "1";
+process.env.TZ = "Asia/Ho_Chi_Minh";
 
 const requiredVariables = ["DATABASE_URL", "OPENCLAW_GATEWAY_TOKEN"];
 const missingVariables = requiredVariables.filter((name) => !process.env[name]?.trim());
@@ -101,12 +102,13 @@ for (const filename of ["AGENTS.md", "SOUL.md", "USER.md", "MEMORY.md"]) {
 // Preserve user edits while adding newly shipped policy sections to an existing volume.
 const agentsSourcePath = join(appDir, "workspace", "AGENTS.md");
 const agentsDestinationPath = join(workspaceDir, "AGENTS.md");
-const storedFilePolicyHeading = "## Stored file policy";
 const currentAgentInstructions = readFileSync(agentsDestinationPath, "utf8");
-if (!currentAgentInstructions.includes(storedFilePolicyHeading)) {
+for (const policyHeading of ["## Stored file policy", "## Reminder policy"]) {
+  if (currentAgentInstructions.includes(policyHeading)) continue;
   const sourceAgentInstructions = readFileSync(agentsSourcePath, "utf8");
-  const policyStart = sourceAgentInstructions.indexOf(storedFilePolicyHeading);
-  const policyEnd = sourceAgentInstructions.indexOf("\n## ", policyStart + storedFilePolicyHeading.length);
+  const policyStart = sourceAgentInstructions.indexOf(policyHeading);
+  if (policyStart < 0) continue;
+  const policyEnd = sourceAgentInstructions.indexOf("\n## ", policyStart + policyHeading.length);
   const storedFilePolicy = sourceAgentInstructions
     .slice(policyStart, policyEnd >= 0 ? policyEnd : undefined)
     .trim();
@@ -114,6 +116,9 @@ if (!currentAgentInstructions.includes(storedFilePolicyHeading)) {
 }
 
 runOpenClaw(["config", "set", "gateway.mode", "local"]);
+runOpenClaw(["config", "set", "agents.defaults.userTimezone", "Asia/Ho_Chi_Minh"]);
+runOpenClaw(["config", "set", "agents.defaults.envelopeTimezone", "Asia/Ho_Chi_Minh"]);
+runOpenClaw(["config", "set", "agents.defaults.timeFormat", "24"]);
 runOpenClaw(["config", "set", "gateway.bind", "lan"]);
 runOpenClaw(["config", "set", "gateway.port", gatewayPort, "--strict-json"]);
 
